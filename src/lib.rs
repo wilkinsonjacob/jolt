@@ -26,7 +26,17 @@ pub fn tokenize(input: &str) -> Result<Vec<Token>, String> {
 
             while i < bytes.len() {
                 if bytes[i] == b'\\' {
-                    i += 2;
+                    if i + 1 >= bytes.len() {
+                        return Err("Incomplete escape sequence".to_string());
+                    }
+                    match bytes[i + 1] {
+                        b'"' | b'\\' | b'/' | b'b' | b'f' | b'n' | b'r' | b't' => {
+                            i += 2;
+                        }
+                        _ => {
+                            return Err("Invalid escape sequence".to_string());
+                        }
+                    }
                 } else if bytes[i] == b'"' {
                     break;
                 } else {
@@ -87,5 +97,23 @@ mod tests {
         assert_eq!(tokens[0].end, 6);
         assert_eq!(tokens[1].start, 9);
         assert_eq!(tokens[1].end, 14);
+    }
+
+    #[test]
+    fn test_valid_escape() {
+        let result = tokenize(r#""hello \"world\"""#);
+        assert!(result.is_ok());
+    }
+
+    #[test]
+    fn test_invalid_escape() {
+        let result = tokenize(r#""hello\q""#);
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_incomplete_escape() {
+        let result = tokenize(r#""hello\"#);
+        assert!(result.is_err());
     }
 }
