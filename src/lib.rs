@@ -83,116 +83,120 @@ fn validate_primitive(value: &str) -> Result<(), String> {
 }
 
 pub fn tokenize(input: &str) -> Result<Vec<Token>, String> {
+    let bytes = input.as_bytes();
     let mut tokens: Vec<Token> = Vec::new();
     let mut stack: Vec<usize> = Vec::new();
-    let bytes = input.as_bytes();
+    let mut i = 0;
 
-    let mut i: usize = 0;
     while i < bytes.len() {
-        if bytes[i] == b'"' {
-            let start = i + 1;
-            i += 1;
+        match bytes[i] {
+            b'"' => {
+                let start = i + 1;
+                i += 1;
 
-            while i < bytes.len() {
-                if bytes[i] == b'\\' {
-                    if i + 1 >= bytes.len() {
-                        return Err("Incomplete escape sequence".to_string());
-                    }
-                    match bytes[i + 1] {
-                        b'"' | b'\\' | b'/' | b'b' | b'f' | b'n' | b'r' | b't' => {
-                            i += 2;
-                        }
-                        b'u' => {
-                            if i + 6 > bytes.len() {
-                                return Err("Incomplete Unicode escape".to_string());
+                while i < bytes.len() {
+                    match bytes[i] {
+                        b'"' => break,
+                        b'\\' => {
+                            if i + 1 >= bytes.len() {
+                                return Err("Incomplete escape sequence".to_string());
                             }
 
-                            for byte in &bytes[i + 2..i + 6] {
-                                if !byte.is_ascii_hexdigit() {
-                                    return Err("Invalid Unicode escape sequence".to_string());
+                            match bytes[i + 1] {
+                                b'"' | b'\\' | b'/' | b'b' | b'f' | b'n' | b'r' | b't' => {
+                                    i += 2;
                                 }
+                                b'u' => {
+                                    if i + 6 > bytes.len() {
+                                        return Err("Incomplete Unicode escape".to_string());
+                                    }
+
+                                    for byte in &bytes[i + 2..i + 6] {
+                                        if !byte.is_ascii_hexdigit() {
+                                            return Err(
+                                                "Invalid Unicode escape sequence".to_string()
+                                            );
+                                        }
+                                    }
+                                    i += 6;
+                                }
+                                _ => return Err("Invalid escape sequence".to_string()),
                             }
-                            i += 6;
                         }
-                        _ => {
-                            return Err("Invalid escape sequence".to_string());
+                        byte if byte < 0x20 => {
+                            return Err("Unescaped control character in JSON string".to_string());
                         }
+                        _ => i += 1,
                     }
-                } else if bytes[i] == b'"' {
-                    break;
-                } else {
-                    if bytes[i] < 0x20 {
-                        return Err("Unescaped control character in JSON string".to_string());
-                    }
-                    i += 1;
                 }
-            }
 
-            if i >= bytes.len() {
-                return Err("Unterminated JSON string".to_string());
-            }
+                if i >= bytes.len() {
+                    return Err("Unterminated JSON string".to_string());
+                }
 
-            let end = i;
-            let token = Token {
-                kind: TokenType::String,
-                start,
-                end,
-                size: 0,
-            };
+                if let Some(&index) = stack.last() {
+                    tokens[index].size += 1;
+                }
 
-            if let Some(&index) = stack.last() {
-                tokens[index].size += 1;
-            }
+                tokens.push(Token {
+                    kind: TokenType::String,
+                    start,
+                    end: i,
+                    size: 0,
+                });
 
-            tokens.push(token);
-        } else if bytes[i] == b'[' {
-            let token = Token {
-                kind: TokenType::Array,
-                start: i,
-                end: 0,
-                size: 0,
-            };
-
-            if let Some(&index) = stack.last() {
-                tokens[index].size += 1;
-            }
-
-            stack.push(tokens.len());
-            tokens.push(token);
-        } else if bytes[i] == b']' {
-            let index = match stack.pop() {
-                Some(index) => index,
-                None => return Err("Unexpected closing bracket".to_string()),
-            };
-            tokens[index].end = i + 1;
-        } else if bytes[i].is_ascii_whitespace() || matches!(bytes[i], b',' | b':' | b'{' | b'}') {
-        } else {
-            let start = i;
-            while i < bytes.len()
-                && !bytes[i].is_ascii_whitespace()
-                && !matches!(bytes[i], b',' | b':' | b'[' | b']' | b'{' | b'}')
-            {
                 i += 1;
             }
-            let end = i;
+            b'[' => {
+                if let Some(&index) = stack.last() {
+                    tokens[index].size += 1;
+                }
 
-            validate_primitive(&input[start..end])?;
+                stack.push(tokens.len());
+                tokens.push(Token {
+                    kind: TokenType::Array,
+                    start: i,
+                    end: 0,
+                    size: 0,
+                });
 
-            let token = Token {
-                kind: TokenType::Primitive,
-                start,
-                end,
-                size: 0,
-            };
-
-            if let Some(&index) = stack.last() {
-                tokens[index].size += 1;
+                i += 1;
             }
+            b']' => {
+                let index = match stack.pop() {
+                    Some(index) => index,
+                    None => return Err("Unexpected closing bracket".to_string()),
+                };
 
-            tokens.push(token);
-            continue;
+                tokens[index].end = i + 1;
+                i += 1;
+            }
+            b',' | b':' | b'{' | b'}' => i += 1,
+            byte if byte.is_ascii_whitespace() => i += 1,
+            _ => {
+                let start = i;
+
+                while i < bytes.len()
+                    && !bytes[i].is_ascii_whitespace()
+                    && !matches!(bytes[i], b',' | b':' | b'[' | b']' | b'{' | b'}')
+                {
+                    i += 1;
+                }
+
+                validate_primitive(&input[start..i])?;
+
+                if let Some(&index) = stack.last() {
+                    tokens[index].size += 1;
+                }
+
+                tokens.push(Token {
+                    kind: TokenType::Primitive,
+                    start,
+                    end: i,
+                    size: 0,
+                });
+            }
         }
-        i += 1;
     }
 
     if !stack.is_empty() {
