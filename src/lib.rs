@@ -1,25 +1,66 @@
+//! A minimal, jsmn-inspired JSON tokenizer.
+//!
+//! `jolt` splits JSON input into tokens describing strings, primitives, arrays,
+//! and objects. Tokens reference byte ranges in the original input rather than
+//! allocating separate strings for their values.
+//!
+//! # Example
+//!
+//! ```
+//! use jolt::{tokenize, TokenType};
+//!
+//! let json = r#"{"name":"Alice"}"#;
+//! let tokens = tokenize(json).unwrap();
+//!
+//! assert_eq!(tokens[0].kind, TokenType::Object);
+//! assert_eq!(tokens[0].size, 1);
+//! assert_eq!(&json[tokens[1].start..tokens[1].end], "name");
+//! ```
+//!
+//! This tokenizer validates string escapes and JSON primitives, but does not
+//! currently enforce every rule of JSON document structure.
+
+/// An error encountered while tokenizing JSON input.
 #[derive(Debug, PartialEq)]
 pub enum TokenizeError {
+    /// The input contains an invalid token, escape, or closing delimiter.
     Invalid,
+    /// The input ends before a string or container is complete.
     Incomplete,
 }
 
+/// The kind of JSON value represented by a token.
 #[derive(Debug, PartialEq)]
 pub enum TokenType {
+    /// A JSON object (`{...}`).
     Object,
+    /// A JSON array (`[...]`).
     Array,
+    /// A quoted JSON string, excluding the surrounding quotation marks.
     String,
+    /// A number, boolean, or `null`.
     Primitive,
 }
 
+/// A token describing a range of the original JSON input.
+///
+/// `start` is inclusive and `end` is exclusive. For strings, the
+/// surrounding quotation marks are excluded; for arrays and objects,
+/// the delimiters are included.
 #[derive(Debug, PartialEq)]
 pub struct Token {
+    /// The token's JSON value type.
     pub kind: TokenType,
+    /// Starting byte offset in the input (inclusive).
     pub start: usize,
+    /// Ending byte offset in the input (exclusive).
     pub end: usize,
+    /// Number of direct children, following jsmn semantics: arrays count
+    /// elements, objects count keys, and object keys count their value.
     pub size: usize,
 }
 
+// Checks whether a complete primitive value follows JSON number syntax.
 fn validate_number(value: &str) -> Result<(), TokenizeError> {
     if value.is_empty() {
         return Err(TokenizeError::Invalid);
@@ -81,6 +122,7 @@ fn validate_number(value: &str) -> Result<(), TokenizeError> {
     Ok(())
 }
 
+// Accepts JSON literals or a valid JSON number.
 fn validate_primitive(value: &str) -> Result<(), TokenizeError> {
     match value {
         "true" | "false" | "null" => Ok(()),
@@ -88,6 +130,28 @@ fn validate_primitive(value: &str) -> Result<(), TokenizeError> {
     }
 }
 
+/// Tokenizes JSON text into a flat sequence of tokens.
+///
+/// Container tokens appear before their children. Each token's byte offsets
+/// refer to `input`, allowing callers to retrieve its original text.
+///
+/// Returns [`TokenizeError::Invalid`] for invalid tokens or mismatched
+/// delimiters and [`TokenizeError::Incomplete`] for unfinished strings or
+/// containers.
+///
+/// # Example
+///
+/// ```
+/// use jolt::{tokenize, TokenType};
+///
+/// let input = r#"[true,42]"#;
+/// let tokens = tokenize(input).unwrap();
+///
+/// assert_eq!(tokens.len(), 3);
+/// assert_eq!(tokens[0].kind, TokenType::Array);
+/// assert_eq!(tokens[0].size, 2);
+/// assert_eq!(&input[tokens[2].start..tokens[2].end], "42");
+/// ```
 pub fn tokenize(input: &str) -> Result<Vec<Token>, TokenizeError> {
     let bytes = input.as_bytes();
     let mut tokens: Vec<Token> = Vec::new();
