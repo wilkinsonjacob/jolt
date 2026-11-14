@@ -38,9 +38,9 @@ pub fn tokenize(input: &str) -> Result<Vec<Token>, String> {
                                 return Err("Incomplete Unicode escape".to_string());
                             }
 
-                            for j in i + 2..i + 6 {
-                                if !bytes[j].is_ascii_hexdigit() {
-                                    return Err("Invalid Unicode escape sequence?".to_string());
+                            for byte in &bytes[i + 2..i + 6] {
+                                if !byte.is_ascii_hexdigit() {
+                                    return Err("Invalid Unicode escape sequence".to_string());
                                 }
                             }
                             i += 6;
