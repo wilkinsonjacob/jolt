@@ -71,6 +71,25 @@ pub fn tokenize(input: &str) -> Result<Vec<Token>, String> {
                 size: 0,
             };
             tokens.push(token);
+        } else if bytes[i].is_ascii_whitespace()
+            || matches!(bytes[i], b',' | b':' | b'[' | b']' | b'{' | b'}')
+        {
+        } else {
+            let start = i;
+            while i < bytes.len()
+                && !bytes[i].is_ascii_whitespace()
+                && !matches!(bytes[i], b',' | b':' | b'[' | b']' | b'{' | b'}')
+            {
+                i += 1;
+            }
+            let end = i;
+            let token = Token {
+                kind: TokenType::Primitive,
+                start,
+                end,
+                size: 0,
+            };
+            tokens.push(token);
         }
         i += 1;
     }
@@ -172,5 +191,28 @@ mod tests {
     fn test_unescaped_tab() {
         let result = tokenize("\"hello\tworld\"");
         assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_primitive_boolean() {
+        let tokens = tokenize("true").unwrap();
+
+        assert_eq!(tokens.len(), 1);
+        assert_eq!(tokens[0].kind, TokenType::Primitive);
+        assert_eq!(tokens[0].start, 0);
+        assert_eq!(tokens[0].end, 4);
+    }
+
+    #[test]
+    fn test_multiple_primitives() {
+        let tokens = tokenize("[true,false,42]").unwrap();
+
+        assert_eq!(tokens.len(), 3);
+        assert_eq!(tokens[0].start, 1);
+        assert_eq!(tokens[0].end, 5);
+        assert_eq!(tokens[1].start, 6);
+        assert_eq!(tokens[1].end, 11);
+        assert_eq!(tokens[2].start, 12);
+        assert_eq!(tokens[2].end, 14);
     }
 }
