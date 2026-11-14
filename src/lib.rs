@@ -14,10 +14,71 @@ pub struct Token {
     pub size: usize,
 }
 
+fn validate_number(value: &str) -> Result<(), String> {
+    if value.is_empty() {
+        return Err("Invalid number".to_string());
+    }
+
+    let bytes = value.as_bytes();
+    let mut i = 0;
+
+    if bytes[i] == b'-' {
+        i += 1;
+    }
+
+    if i >= bytes.len() {
+        return Err("Missing digits after minus sign".to_string());
+    }
+
+    if bytes[i] == b'0' {
+        i += 1;
+    } else if (b'1'..=b'9').contains(&bytes[i]) {
+        while i < bytes.len() && bytes[i].is_ascii_digit() {
+            i += 1;
+        }
+    } else {
+        return Err("Invalid number".to_string());
+    }
+
+    if i < bytes.len() && bytes[i] == b'.' {
+        i += 1;
+
+        if i >= bytes.len() || !bytes[i].is_ascii_digit() {
+            return Err("Missing digits after decimal point".to_string());
+        }
+
+        while i < bytes.len() && bytes[i].is_ascii_digit() {
+            i += 1;
+        }
+    }
+
+    if i < bytes.len() && matches!(bytes[i], b'e' | b'E') {
+        i += 1;
+
+        if i < bytes.len() && matches!(bytes[i], b'+' | b'-') {
+            i += 1;
+        }
+
+        if i >= bytes.len() || !bytes[i].is_ascii_digit() {
+            return Err("Missing exponent digits".to_string());
+        }
+
+        while i < bytes.len() && bytes[i].is_ascii_digit() {
+            i += 1;
+        }
+    }
+
+    if i != bytes.len() {
+        return Err("Invalid characters after number".to_string());
+    }
+
+    Ok(())
+}
+
 fn validate_primitive(value: &str) -> Result<(), String> {
     match value {
         "true" | "false" | "null" => Ok(()),
-        _ => Err("Invalid primitive".to_string()),
+        _ => validate_number(value),
     }
 }
 
@@ -238,5 +299,47 @@ mod tests {
         assert!(validate_primitive("hello").is_err());
         assert!(validate_primitive("True").is_err());
         assert!(validate_primitive("undefined").is_err());
+    }
+
+    #[test]
+    fn test_valid_integers() {
+        for value in ["0", "42", "-42", "123456"] {
+            assert!(validate_number(value).is_ok(), "{value}");
+        }
+    }
+
+    #[test]
+    fn test_invalid_integers() {
+        for value in ["", "-", "01", "-01", "+3", "12abc"] {
+            assert!(validate_number(value).is_err(), "{value}");
+        }
+    }
+
+    #[test]
+    fn test_valid_decimals() {
+        for value in ["3.14", "0.5", "-12.75"] {
+            assert!(validate_number(value).is_ok(), "{value}");
+        }
+    }
+
+    #[test]
+    fn test_invalid_decimals() {
+        for value in ["1.", ".5", "1.2.3", "01.5"] {
+            assert!(validate_number(value).is_err(), "{value}");
+        }
+    }
+
+    #[test]
+    fn test_valid_exponents() {
+        for value in ["1e10", "1E10", "2.5e-3", "-3E+8", "0e0"] {
+            assert!(validate_number(value).is_ok(), "{value}");
+        }
+    }
+
+    #[test]
+    fn test_invalid_exponents() {
+        for value in ["1e", "1e+", "1e-", "1e2.3", "1e++2"] {
+            assert!(validate_number(value).is_err(), "{value}");
+        }
     }
 }
