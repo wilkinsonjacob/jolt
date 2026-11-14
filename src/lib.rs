@@ -84,6 +84,7 @@ fn validate_primitive(value: &str) -> Result<(), String> {
 
 pub fn tokenize(input: &str) -> Result<Vec<Token>, String> {
     let mut tokens: Vec<Token> = Vec::new();
+    let mut stack: Vec<usize> = Vec::new();
     let bytes = input.as_bytes();
 
     let mut i: usize = 0;
@@ -138,10 +139,33 @@ pub fn tokenize(input: &str) -> Result<Vec<Token>, String> {
                 end,
                 size: 0,
             };
+
+            if let Some(&index) = stack.last() {
+                tokens[index].size += 1;
+            }
+
             tokens.push(token);
-        } else if bytes[i].is_ascii_whitespace()
-            || matches!(bytes[i], b',' | b':' | b'[' | b']' | b'{' | b'}')
-        {
+        } else if bytes[i] == b'[' {
+            let token = Token {
+                kind: TokenType::Array,
+                start: i,
+                end: 0,
+                size: 0,
+            };
+
+            if let Some(&index) = stack.last() {
+                tokens[index].size += 1;
+            }
+
+            stack.push(tokens.len());
+            tokens.push(token);
+        } else if bytes[i] == b']' {
+            let index = match stack.pop() {
+                Some(index) => index,
+                None => return Err("Unexpected closing bracket".to_string()),
+            };
+            tokens[index].end = i + 1;
+        } else if bytes[i].is_ascii_whitespace() || matches!(bytes[i], b',' | b':' | b'{' | b'}') {
         } else {
             let start = i;
             while i < bytes.len()
@@ -160,10 +184,21 @@ pub fn tokenize(input: &str) -> Result<Vec<Token>, String> {
                 end,
                 size: 0,
             };
+
+            if let Some(&index) = stack.last() {
+                tokens[index].size += 1;
+            }
+
             tokens.push(token);
+            continue;
         }
         i += 1;
     }
+
+    if !stack.is_empty() {
+        return Err("Unclosed array".to_string());
+    }
+
     Ok(tokens)
 }
 
@@ -278,13 +313,15 @@ mod tests {
     fn test_multiple_primitives() {
         let tokens = tokenize("[true,false,42]").unwrap();
 
-        assert_eq!(tokens.len(), 3);
-        assert_eq!(tokens[0].start, 1);
-        assert_eq!(tokens[0].end, 5);
-        assert_eq!(tokens[1].start, 6);
-        assert_eq!(tokens[1].end, 11);
-        assert_eq!(tokens[2].start, 12);
-        assert_eq!(tokens[2].end, 14);
+        assert_eq!(tokens.len(), 4);
+        assert_eq!(tokens[0].kind, TokenType::Array);
+
+        assert_eq!(tokens[1].start, 1);
+        assert_eq!(tokens[1].end, 5);
+        assert_eq!(tokens[2].start, 6);
+        assert_eq!(tokens[2].end, 11);
+        assert_eq!(tokens[3].start, 12);
+        assert_eq!(tokens[3].end, 14);
     }
 
     #[test]
@@ -341,5 +378,72 @@ mod tests {
         for value in ["1e", "1e+", "1e-", "1e2.3", "1e++2"] {
             assert!(validate_number(value).is_err(), "{value}");
         }
+    }
+
+    #[test]
+    fn test_array_token() {
+        let tokens = tokenize("[true,false,42]").unwrap();
+
+        assert_eq!(tokens.len(), 4);
+        assert_eq!(tokens[0].kind, TokenType::Array);
+        assert_eq!(tokens[0].start, 0);
+    }
+
+    #[test]
+    fn test_array_end() {
+        let tokens = tokenize("[true,false,42]").unwrap();
+
+        assert_eq!(tokens[0].kind, TokenType::Array);
+        assert_eq!(tokens[0].start, 0);
+        assert_eq!(tokens[0].end, 15);
+    }
+
+    #[test]
+    fn test_nested_arrays() {
+        let tokens = tokenize("[[1,2],[3,4]]").unwrap();
+
+        assert_eq!(tokens[0].start, 0);
+        assert_eq!(tokens[0].end, 13);
+
+        assert_eq!(tokens[1].start, 1);
+        assert_eq!(tokens[1].end, 6);
+
+        assert_eq!(tokens[4].start, 7);
+        assert_eq!(tokens[4].end, 12);
+    }
+
+    #[test]
+    fn test_unexpected_closing_bracket() {
+        assert!(tokenize("]").is_err());
+    }
+
+    #[test]
+    fn test_array_size() {
+        let tokens = tokenize("[10,20,30]").unwrap();
+
+        assert_eq!(tokens[0].size, 3);
+    }
+
+    #[test]
+    fn test_nested_array_sizes() {
+        let tokens = tokenize("[[1,2],[3,4]]").unwrap();
+
+        assert_eq!(tokens[0].size, 2);
+        assert_eq!(tokens[1].size, 2);
+        assert_eq!(tokens[4].size, 2);
+    }
+
+    #[test]
+    fn test_empty_array_size() {
+        let tokens = tokenize("[]").unwrap();
+
+        assert_eq!(tokens[0].size, 0);
+    }
+
+    #[test]
+    fn test_string_array_size() {
+        let tokens = tokenize(r#"["hello","world"]"#).unwrap();
+
+        assert_eq!(tokens[0].size, 2);
     }
 }
