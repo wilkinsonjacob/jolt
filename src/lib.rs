@@ -52,6 +52,9 @@ pub fn tokenize(input: &str) -> Result<Vec<Token>, String> {
                 } else if bytes[i] == b'"' {
                     break;
                 } else {
+                    if bytes[i] < 0x20 {
+                        return Err("Unescaped control character in JSON string".to_string());
+                    }
                     i += 1;
                 }
             }
@@ -150,6 +153,24 @@ mod tests {
     fn test_incomplete_unicode_escape() {
         let result = tokenize(r#""hello \u123"#);
 
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_unescaped_newline() {
+        let result = tokenize("\"hello\nworld\"");
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_escaped_newline() {
+        let result = tokenize(r#""hello\nworld""#);
+        assert!(result.is_ok());
+    }
+
+    #[test]
+    fn test_unescaped_tab() {
+        let result = tokenize("\"hello\tworld\"");
         assert!(result.is_err());
     }
 }
