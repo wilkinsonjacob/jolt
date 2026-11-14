@@ -14,6 +14,13 @@ pub struct Token {
     pub size: usize,
 }
 
+fn validate_primitive(value: &str) -> Result<(), String> {
+    match value {
+        "true" | "false" | "null" => Ok(()),
+        _ => Err("Invalid primitive".to_string()),
+    }
+}
+
 pub fn tokenize(input: &str) -> Result<Vec<Token>, String> {
     let mut tokens: Vec<Token> = Vec::new();
     let bytes = input.as_bytes();
@@ -83,6 +90,9 @@ pub fn tokenize(input: &str) -> Result<Vec<Token>, String> {
                 i += 1;
             }
             let end = i;
+
+            validate_primitive(&input[start..end])?;
+
             let token = Token {
                 kind: TokenType::Primitive,
                 start,
@@ -214,5 +224,19 @@ mod tests {
         assert_eq!(tokens[1].end, 11);
         assert_eq!(tokens[2].start, 12);
         assert_eq!(tokens[2].end, 14);
+    }
+
+    #[test]
+    fn test_valid_primitives() {
+        assert!(validate_primitive("true").is_ok());
+        assert!(validate_primitive("false").is_ok());
+        assert!(validate_primitive("null").is_ok());
+    }
+
+    #[test]
+    fn test_invalid_primitives() {
+        assert!(validate_primitive("hello").is_err());
+        assert!(validate_primitive("True").is_err());
+        assert!(validate_primitive("undefined").is_err());
     }
 }
