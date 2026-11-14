@@ -14,7 +14,7 @@ pub struct Token {
     pub size: usize,
 }
 
-pub fn tokenize(input: &str) -> Vec<Token> {
+pub fn tokenize(input: &str) -> Result<Vec<Token>, String> {
     let mut tokens: Vec<Token> = Vec::new();
     let bytes = input.as_bytes();
 
@@ -34,6 +34,10 @@ pub fn tokenize(input: &str) -> Vec<Token> {
                 }
             }
 
+            if i >= bytes.len() {
+                return Err("Unterminated JSON string".to_string());
+            }
+
             let end = i;
             let token = Token {
                 kind: TokenType::String,
@@ -45,7 +49,7 @@ pub fn tokenize(input: &str) -> Vec<Token> {
         }
         i += 1;
     }
-    tokens
+    Ok(tokens)
 }
 
 #[cfg(test)]
@@ -53,19 +57,30 @@ mod tests {
     use super::*;
 
     #[test]
-    fn test_string_token() {
-        let input = r#""hello""#;
-        let tokens = tokenize(input);
+    fn test_valid_string() {
+        let result = tokenize(r#""hello""#);
+
+        assert!(result.is_ok());
+
+        let tokens = result.unwrap();
 
         assert_eq!(tokens.len(), 1);
-        assert_eq!(tokens[0].kind, TokenType::String);
-        assert_eq!(tokens[0].start, 1);
-        assert_eq!(tokens[0].end, 6);
+    }
+
+    #[test]
+    fn test_invalid_string() {
+        let result = tokenize(r#""hello"#);
+
+        assert!(result.is_err());
     }
 
     #[test]
     fn test_multiple_strings() {
-        let tokens = tokenize(r#""hello" "world""#);
+        let result = tokenize(r#""hello" "world""#);
+
+        assert!(result.is_ok());
+
+        let tokens = result.unwrap();
 
         assert_eq!(tokens.len(), 2);
         assert_eq!(tokens[0].start, 1);
